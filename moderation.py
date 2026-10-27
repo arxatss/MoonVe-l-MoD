@@ -1,14 +1,30 @@
-from discord.ext import commands
-import discord
 from datetime import datetime, timedelta, timezone
+from collections import defaultdict, deque
 import json
 import os
-from collections import defaultdict, deque
+from threading import Thread
+import discord
+from discord.ext import commands
+from flask import Flask
 
+# --- Render'ın kapanmaması için mini web sunucusu ---
+app = Flask('')
+
+@app.route('/')
+def home():
+    return 'Bot aktif ve çalışıyor!'
+
+def run():
+    app.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
+
+# --- Sabitler ve Dosya İşlemleri ---
 CEZALAR_KANAL_ID = 1515031746935132243
 GECMIS_KANAL_ID = 1515031747774120101
 UYARI_DOSYASI = os.path.join(os.path.dirname(__file__), "..", "data", "warnings.json")
-
 
 def uyarilari_yukle():
     os.makedirs(os.path.dirname(UYARI_DOSYASI), exist_ok=True)
@@ -17,12 +33,10 @@ def uyarilari_yukle():
     with open(UYARI_DOSYASI, "r", encoding="utf-8") as f:
         return json.load(f)
 
-
 def uyarilari_kaydet(data):
     os.makedirs(os.path.dirname(UYARI_DOSYASI), exist_ok=True)
     with open(UYARI_DOSYASI, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-
 
 async def ceza_log(guild, baslik, renk, avatar_url=None, **alanlar):
     if not CEZALAR_KANAL_ID:
@@ -41,11 +55,10 @@ async def ceza_log(guild, baslik, renk, avatar_url=None, **alanlar):
     embed.set_footer(text="Aetheris Moderasyon Sistemi")
     await kanal.send(embed=embed)
 
-
 SPAM_LIMIT = 5
 SPAM_MUTE_DAKIKA = 10
 
-
+# --- Moderasyon Sınıfı (Cog yerine doğrudan bot'a eklenen yapı) ---
 class Moderation(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -378,6 +391,18 @@ class Moderation(commands.Cog):
         if isinstance(error, commands.MissingPermissions):
             await ctx.send("❌ Mesaj silmek için yetkin yok.", delete_after=5)
 
+# --- Bot Başlatıcı ve Ayarlar ---
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True
+bot = commands.Bot(command_prefix='!', intents=intents)
 
-async def setup(bot):
+@bot.event
+async def on_ready():
     await bot.add_cog(Moderation(bot))
+    print(f'{bot.user} olarak giriş yapıldı ve moderasyon komutları yüklendi!')
+
+# --- Botu Çalıştırma ---
+keep_alive()
+token = os.getenv('DISCORD_TOKEN')
+bot.run(token)
